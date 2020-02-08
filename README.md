@@ -1,6 +1,3 @@
-# Tugas Besar Strategi Algoritma
-# Greedy Algorithm
+# Tugas Besar Strategi Algoritma Greedy Algorithm
+Deadline 12 Februari 2020
 
-# Strategi Energy
-1. Buat bangunan energy di setiap cell height pada kolom terakhir
-pada baris yang tidak diserang
