@@ -8,6 +8,7 @@ import za.co.entelect.challenge.enums.BuildingType;
 import za.co.entelect.challenge.enums.PlayerType;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Optional;
 import java.util.Random;
 import java.util.function.Predicate;
@@ -16,6 +17,9 @@ import java.util.stream.Collectors;
 public class Bot {
 
     private GameState gameState;
+    private int mapHeight;
+    private int mapWidth;
+    private GameDetails gameDetails;
 
     /**
      * Constructor
@@ -24,7 +28,10 @@ public class Bot {
      **/
     public Bot(GameState gameState) {
         this.gameState = gameState;
-        gameState.getGameMap();
+        this.gameDetails = gameState.getGameDetails();
+        this.mapHeight = gameDetails.mapHeight;
+        this.mapWidth = gameDetails.mapWidth;
+        
     }
 
     /**
@@ -36,28 +43,31 @@ public class Bot {
         String command = "";
 
         if (command.equals("")) {
-            for (int i = 0; i < gameState.getGameDetails().mapHeight; i++) {
+            for (int i = 0; i < mapHeight; i++) {
                 // int enemyTeslaOnRow = getAllBuildingsForPlayer(PlayerType.B, b -> b.buildingType == BuildingType.TESLA, i).size();
                 // int myTeslaOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.TESLA, i).size();
-
-                if (getEnergy(PlayerType.A) >= gameState.getGameDetails().ironCurtainStats.price && gameState.getPlayers().stream().filter(p -> p.playerType == PlayerType.A).collect(Collectors.toList()).get(0).ironCurtainAvailable) {
-                    command = "0,0,5";
-                    break;
+                if(getPlayer(PlayerType.A).ironCurtainAvailable){
+                    if (getEnergy(PlayerType.A) >= gameDetails.ironCurtainStats.price && getPlayer(PlayerType.A).activeIronCurtainLifetime < 1) {
+                        command = "0,0,5";
+                        break;
+                    }
                 }
             }
         }
             
         //If the enemy has an attack building and I don't have a blocking wall, then block from the front.
         if (command.equals("")){
-            for (int i = 0; i < gameState.getGameDetails().mapHeight; i++) {
+            for (int i = 0; i < mapHeight; i++) {
                 int enemyAttackOnRow = getAllBuildingsForPlayer(PlayerType.B, b -> b.buildingType == BuildingType.ATTACK, i).size();
                 int myDefenseOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.DEFENSE, i).size();
 
                 if (enemyAttackOnRow > 0 && myDefenseOnRow == 0) {
-                    if (canAffordBuilding(BuildingType.DEFENSE))
+                    if (canAffordBuilding(BuildingType.DEFENSE)){
                         command = placeBuildingInRowFromFront(BuildingType.DEFENSE, i);
-                    else
+                    }
+                    else {
                         command = "";
+                    }
                     break;
                 }
             }
@@ -65,34 +75,50 @@ public class Bot {
 
         //If there is a row where I don't have energy and there is no enemy attack building, then build energy in the back row.
         if (command.equals("")) {
-            for (int i = 0; i < gameState.getGameDetails().mapHeight; i++) {
+            for (int i = 0; i < mapHeight; i++) {
                 int enemyAttackOnRow = getAllBuildingsForPlayer(PlayerType.B, b -> b.buildingType == BuildingType.ATTACK, i).size();
                 int myEnergyOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.ENERGY, i).size();
 
                 if (enemyAttackOnRow == 0 && myEnergyOnRow == 0) {
-                    if (canAffordBuilding(BuildingType.ENERGY))
+                    if (canAffordBuilding(BuildingType.ENERGY)){
                         command = placeBuildingInRowFromBack(BuildingType.ENERGY, i);
+                    }
                     break;
+                }
+            }
+        }
+
+        if(getPlayer(PlayerType.A).activeIronCurtainLifetime > 2){
+            for (int i = 0; i < mapHeight; i++){
+                int myEnergyOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.ENERGY, i).size();
+                if(canAffordBuilding(BuildingType.ENERGY) && myEnergyOnRow < 2){
+                    command = placeBuildingInRowFromBack(BuildingType.ENERGY, i);
+                    if(!command.equals("")){
+                        break;
+                    }
                 }
             }
         }
 
         //If I have a defense building on a row, then build an attack building behind it.
         if (command.equals("")) {
-            for (int i = 0; i < gameState.getGameDetails().mapHeight; i++) {
+            for (int i = 0; i < mapHeight; i++) {
+                int myAttackOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.ATTACK, i).size();
+                int enemyAttackOnRow = getAllBuildingsForPlayer(PlayerType.B, b -> b.buildingType == BuildingType.ATTACK, i).size();
+
                 if (getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.DEFENSE, i).size() > 0
-                        && canAffordBuilding(BuildingType.ATTACK)) {
+                        && canAffordBuilding(BuildingType.ATTACK) && myAttackOnRow <= enemyAttackOnRow) {
                     command = placeBuildingInRowFromFront(BuildingType.ATTACK, i);
                 }
             }
         }
 
-        if (command.equals("")) {    
-            for (int i = 0; i < gameState.getGameDetails().mapHeight; i++) {
-                // int myAttackOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.ATTACK, i).size();
-                // int myDefenseOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.DEFENSE, i).size();
+        if (numOfTesla() < 2) {
+            for (int i = 0; i < mapHeight; i++) {
+                int myAttackOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.ATTACK, i).size();
+                int myDefenseOnRow = getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.DEFENSE, i).size();
                 
-                if (getEnergy(PlayerType.A) >= getPriceForBuilding(BuildingType.TESLA) + gameState.getGameDetails().ironCurtainStats.price){
+                if (getEnergy(PlayerType.A) >= getPriceForBuilding(BuildingType.TESLA) + 0.5*gameState.getGameDetails().ironCurtainStats.price && myAttackOnRow > 1 && myDefenseOnRow > 0){
                     command = placeBuildingInRowFromBack(BuildingType.TESLA, i);
                 }
             }
@@ -100,16 +126,60 @@ public class Bot {
 
         //If I don't need to do anything then either attack or defend randomly based on chance (65% attack, 35% defense).
         if (command.equals("")) {
-            if (getEnergy(PlayerType.A) >= getMostExpensiveBuildingPrice()) {
-                if ((new Random()).nextInt(100) <= 65) {
-                    command = placeBuildingRandomlyFromFront(BuildingType.DEFENSE);
-                } else {
-                    command = placeBuildingRandomlyFromBack(BuildingType.ATTACK);
-                }
-            }
+            command = randomBuild();
         }
 
         return command;
+    }
+
+    private Player getPlayer(PlayerType playerType){
+        return gameState.getPlayers().stream().filter(p -> p.playerType == playerType).collect(Collectors.toList()).get(0);
+    }
+
+    private String randomBuild(){
+        String command = "";
+        if (canAffordBuilding(BuildingType.ENERGY) && !canAffordBuilding(BuildingType.DEFENSE) && !canAffordBuilding(BuildingType.ATTACK)) {
+            command = placeBuildingRandomlyFromBack(BuildingType.ENERGY);
+        }
+        else if(canAffordBuilding(BuildingType.ATTACK)){
+            int rn = (new Random()).nextInt(100);
+            if (rn <= 70) {
+                command = placeBuildingRandomlyFromBack(BuildingType.ENERGY);
+            } if(rn > 70 && rn <= 85) {
+                command = placeBuildingRandomlyFromFront(BuildingType.DEFENSE);
+            } else{
+                command = placeAttackRandomlyBehindDefense();
+                if(command == ""){
+                    command = randomBuild();
+                }
+            }
+        }
+        return command;
+    }
+
+    private String placeAttackRandomlyBehindDefense(){
+        String command = "";
+        List<Integer> rows= new ArrayList<Integer>();
+        int idx = 0;
+        for (int i = 0; i < mapHeight; i++) {
+            if(getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.DEFENSE, i).size() > 0){
+                rows.add(idx,i);
+                idx++;
+            }
+        }
+        if(rows.size() > 0){
+            int rn = (new Random()).nextInt(rows.size());
+            command = placeBuildingInRowFromFront(BuildingType.ATTACK, rows.get(rn));
+        }
+        return command;        
+    }
+
+    private int numOfTesla(){
+        int numOfTesla = 0;
+        for (int i = 0; i < mapHeight; i++) {
+            numOfTesla += getAllBuildingsForPlayer(PlayerType.A, b -> b.buildingType == BuildingType.TESLA, i).size();
+        }
+        return numOfTesla;
     }
 
     /**
@@ -119,7 +189,7 @@ public class Bot {
      * @return the result
      **/
     private String placeBuildingRandomlyFromBack(BuildingType buildingType) {
-        for (int i = 0; i < gameState.getGameDetails().mapWidth / 2; i++) {
+        for (int i = 0; i < mapWidth / 2; i++) {
             List<CellStateContainer> listOfFreeCells = getListOfEmptyCellsForColumn(i);
             if (!listOfFreeCells.isEmpty()) {
                 CellStateContainer pickedCell = listOfFreeCells.get((new Random()).nextInt(listOfFreeCells.size()));
@@ -136,7 +206,7 @@ public class Bot {
      * @return the result
      **/
     private String placeBuildingRandomlyFromFront(BuildingType buildingType) {
-        for (int i = (gameState.getGameDetails().mapWidth / 2) - 1; i >= 0; i--) {
+        for (int i = (mapWidth / 2) - 1; i >= 0; i--) {
             List<CellStateContainer> listOfFreeCells = getListOfEmptyCellsForColumn(i);
             if (!listOfFreeCells.isEmpty()) {
                 CellStateContainer pickedCell = listOfFreeCells.get((new Random()).nextInt(listOfFreeCells.size()));
@@ -154,9 +224,18 @@ public class Bot {
      * @return the result
      **/
     private String placeBuildingInRowFromFront(BuildingType buildingType, int y) {
-        for (int i = (gameState.getGameDetails().mapWidth / 2) - 1; i >= 0; i--) {
+        for (int i = (mapWidth / 2) - 1; i >= 0; i--) {
             if (isCellEmpty(i, y)) {
                 return buildingType.buildCommand(i, y);
+            }
+        }
+        return "";
+    }
+
+    private String placeBuildingInColumnFromBottom(BuildingType buildingType, int x) {
+        for (int i = 0; i < mapHeight; i++) {
+            if (isCellEmpty(x, i)) {
+                return buildingType.buildCommand(x, i);
             }
         }
         return "";
@@ -170,7 +249,7 @@ public class Bot {
      * @return the result
      **/
     private String placeBuildingInRowFromBack(BuildingType buildingType, int y) {
-        for (int i = 0; i < gameState.getGameDetails().mapWidth / 2; i++) {
+        for (int i = 0; i < mapWidth / 2; i++) {
             if (isCellEmpty(i, y)) {
                 return buildingType.buildCommand(i, y);
             }
@@ -257,7 +336,7 @@ public class Bot {
      * @return the result
      **/
     private int getPriceForBuilding(BuildingType buildingType) {
-        return gameState.getGameDetails().buildingsStats.get(buildingType).price;
+        return gameDetails.buildingsStats.get(buildingType).price;
     }
 
     /**
@@ -266,7 +345,7 @@ public class Bot {
      * @return the result
      **/
     private int getMostExpensiveBuildingPrice() {
-        return gameState.getGameDetails().buildingsStats
+        return gameDetails.buildingsStats
                 .values().stream()
                 .mapToInt(b -> b.price)
                 .max()
